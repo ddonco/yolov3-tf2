@@ -148,7 +148,7 @@ def YoloOutput(filters, anchors, classes, name=None):
 
 def yolo_boxes(pred, anchors, classes):
     # pred: (batch_size, grid, grid, anchors, (x, y, w, h, obj, ...classes))
-    grid_size = tf.shape(pred)[1]
+    grid_size = tf.cast(tf.shape(pred)[1:3][::-1], tf.float32)
     box_xy, box_wh, objectness, class_probs = tf.split(
         pred, (2, 2, 1, classes), axis=-1)
 
@@ -158,12 +158,12 @@ def yolo_boxes(pred, anchors, classes):
     pred_box = tf.concat((box_xy, box_wh), axis=-1)  # original xywh for loss
 
     # !!! grid[x][y] == (y, x)
-    grid = tf.meshgrid(tf.range(grid_size), tf.range(grid_size))
+    grid = tf.meshgrid(tf.range(grid_size[0]), tf.range(grid_size[1]))
     grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)  # [gx, gy, 1, 2]
 
-    box_xy = (box_xy + tf.cast(grid, tf.float32)) / \
-        tf.cast(grid_size, tf.float32)
-    box_wh = tf.exp(box_wh) * anchors
+    box_xy = (box_xy + tf.cast(grid, tf.float32)) / grid_size
+    box_wh = tf.exp(box_wh) * anchors * (grid_size[0] / grid_size)
+
 
     box_x1y1 = box_xy - box_wh / 2
     box_x2y2 = box_xy + box_wh / 2
@@ -201,7 +201,11 @@ def yolo_nms(outputs, anchors, masks, classes):
 
 def YoloV3(size=None, channels=3, anchors=yolo_anchors,
            masks=yolo_anchor_masks, classes=80, training=False):
-    x = inputs = Input([size, size, channels])
+    if size is None:
+        h,w = None,None
+    else:
+        h,w = size
+    x = inputs = Input([h, w, channels])
 
     x_36, x_61, x = Darknet(name='yolo_darknet')(x)
 
